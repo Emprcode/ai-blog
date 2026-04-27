@@ -17,15 +17,24 @@ export const handler = async (event: any) => {
         }
 
         const prompt = `
-Write a 200–300 word blog.
+You are a professional blog writer.
+
+Generate a blog post in JSON format only.
 
 Topic: ${topic}
 
-Include:
-- Title
-- Introduction
-- Body (2–3 paragraphs)
-- Conclusion
+Return format:
+{
+  "title": "string",
+  "blog": "200-300 word blog",
+  "summary": "2-3 sentence summary",
+  "keywords": ["keyword1", "keyword2", "keyword3"]
+}
+
+Rules:
+- No extra text outside JSON
+- Professional tone
+- SEO optimized
 `;
 
         const command = new InvokeModelCommand({
@@ -58,13 +67,23 @@ Include:
             responseBody.choices?.[0]?.message?.content ||
             responseBody.generated_text ||
             responseBody.results?.[0]?.outputText;
+        let parsed;
+
+        try {
+            parsed = JSON.parse(blog);
+        } catch {
+            parsed = {
+                title: "Generated Blog",
+                blog,
+                summary: "",
+                keywords: []
+            };
+        }
 
         return {
             statusCode: 200,
-            body: JSON.stringify({
-                topic,
-                blog
-            })
+            body: JSON.stringify(
+                parsed)
         };
 
     } catch (error: any) {
