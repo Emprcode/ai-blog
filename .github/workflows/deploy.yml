@@ -1,0 +1,88 @@
+name: Deploy Full Stack AI Blog App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ------------------------
+      # SETUP NODE
+      # ------------------------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # ------------------------
+      # BUILD LAMBDA
+      # ------------------------
+      - name: Install backend deps
+        run: |
+          cd backend
+          npm install
+
+      - name: Build Lambda
+        run: |
+          cd backend
+          npm run build
+
+      - name: Zip Lambda
+        run: |
+          cd backend/dist
+          zip -r index.zip .
+          mv index.zip ../../backend/terraform/
+
+      # ------------------------
+      # SETUP TERRAFORM
+      # ------------------------
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: |
+          cd backend/terraform
+          terraform init
+
+      - name: Terraform Apply
+        run: |
+          cd backend/terraform
+          terraform apply -auto-approve
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+
+      # ------------------------
+      # BUILD FRONTEND
+      # ------------------------
+      - name: Install frontend deps
+        run: |
+          cd frontend
+          npm install
+
+      - name: Build frontend
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.API_URL }}
+        run: |
+          cd frontend
+          npm run build
+          npm run export
+
+      # ------------------------
+      # DEPLOY TO S3
+      # ------------------------
+      - name: Deploy to S3
+        run: |
+          aws s3 sync frontend/out s3://${{ secrets.BUCKET_NAME }} --delete
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}

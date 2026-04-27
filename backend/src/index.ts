@@ -1,8 +1,11 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { randomUUID } from "crypto";
 
 const client = new BedrockRuntimeClient({
     region: "us-east-1"
 });
+const db = new DynamoDBClient({ region: "us-east-1" });
 
 export const handler = async (event: any) => {
     try {
@@ -16,25 +19,17 @@ export const handler = async (event: any) => {
             };
         }
 
-        const prompt = `
-You are a professional blog writer.
 
-Generate a blog post in JSON format only.
+        const prompt = `
+Write a 200–300 word blog.
 
 Topic: ${topic}
 
-Return format:
-{
-  "title": "string",
-  "blog": "200-300 word blog",
-  "summary": "2-3 sentence summary",
-  "keywords": ["keyword1", "keyword2", "keyword3"]
-}
-
-Rules:
-- No extra text outside JSON
-- Professional tone
-- SEO optimized
+Include:
+- Title
+- Introduction
+- Body (2–3 paragraphs)
+- Conclusion
 `;
 
         const command = new InvokeModelCommand({
@@ -56,8 +51,6 @@ Rules:
 
         const response = await client.send(command);
 
-
-
         const responseBody = JSON.parse(
             new TextDecoder().decode(response.body)
         );
@@ -67,23 +60,23 @@ Rules:
             responseBody.choices?.[0]?.message?.content ||
             responseBody.generated_text ||
             responseBody.results?.[0]?.outputText;
-        let parsed;
 
-        try {
-            parsed = JSON.parse(blog);
-        } catch {
-            parsed = {
-                title: "Generated Blog",
-                blog,
-                summary: "",
-                keywords: []
-            };
-        }
+        await db.send(
+            new PutItemCommand({
+                TableName: "blog-topics",
+                Item: {
+                    id: { S: randomUUID() },
+                    topic: { S: topic }
+                }
+            })
+        );
 
         return {
             statusCode: 200,
-            body: JSON.stringify(
-                parsed)
+            body: JSON.stringify({
+                topic,
+                blog
+            })
         };
 
     } catch (error: any) {

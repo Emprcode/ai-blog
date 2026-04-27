@@ -71,6 +71,11 @@ resource "aws_lambda_function" "blog_lambda" {
 resource "aws_apigatewayv2_api" "http_api" {
   name          = "ai-blog-api"
   protocol_type = "HTTP"
+  cors_configuration {
+    allow_origins = ["*"]
+    allow_methods = ["POST", "OPTIONS"]
+    allow_headers = ["Content-Type"]
+  }
 }
 
 # Connect API to Lambda 
@@ -105,4 +110,116 @@ resource "aws_lambda_permission" "api_gateway" {
   principal     = "apigateway.amazonaws.com"
 
   source_arn = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
+}
+
+#Create s3 bucket 
+
+resource "aws_s3_bucket" "frontend" {
+  bucket = "ai-blog-frontend-unique123-12345"
+}
+
+#Enable static hosting
+resource "aws_s3_bucket_website_configuration" "frontend_site" {
+  bucket = aws_s3_bucket.frontend.id
+
+  index_document {
+    suffix = "index.html"
+  }
+
+  error_document {
+    key = "index.html"
+  }
+}
+
+# Allow public access 
+resource "aws_s3_bucket_public_access_block" "frontend_access" {
+  bucket = aws_s3_bucket.frontend.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
+#Bucket policy
+resource "aws_s3_bucket_policy" "frontend_policy" {
+  bucket = aws_s3_bucket.frontend.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = "*",
+      Action = "s3:GetObject",
+      Resource = "${aws_s3_bucket.frontend.arn}/*"
+    }]
+  })
+}
+
+#Add Cloudfront
+resource "aws_cloudfront_distribution" "frontend_cdn" {
+
+  origin {
+    domain_name = aws_s3_bucket.frontend.bucket_regional_domain_name
+    origin_id   = "s3-origin"
+  }
+
+  enabled             = true
+  default_root_object = "index.html"
+
+  default_cache_behavior {
+    target_origin_id       = "s3-origin"
+    viewer_protocol_policy = "redirect-to-https"
+
+    allowed_methods = ["GET", "HEAD", "OPTIONS"]
+    cached_methods  = ["GET", "HEAD"]
+
+    compress = true
+
+    cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}
+
+#add dynamodb table 
+resource "aws_dynamodb_table" "topics" {
+  name         = "blog-topics"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+}
+
+resource "aws_iam_policy" "lambda_dynamodb_policy" {
+  name = "lambda-dynamodb-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Action = [
+        "dynamodb:PutItem",
+        "dynamodb:GetItem",
+        "dynamodb:Scan"
+      ],
+      Resource = aws_dynamodb_table.topics.arn
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_dynamodb_attach" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = aws_iam_policy.lambda_dynamodb_policy.arn
 }
