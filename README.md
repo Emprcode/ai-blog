@@ -2,6 +2,8 @@
 
 A full-stack serverless AI blog generation platform built using **AWS, Terraform, Bedrock, Lambda, API Gateway, DynamoDB, and Next.js**, with full CI/CD using GitHub Actions.
 
+![Architecture diagram](./architectureDiagram.png)
+
 ---
 
 ## Tech Stack
